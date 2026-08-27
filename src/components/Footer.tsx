@@ -16,7 +16,13 @@ export const Footer: React.FC = () => {
           {/* Brand Info */}
           <div className="md:col-span-5 flex flex-col items-center md:items-start text-center md:text-left">
             <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-xs mb-3 inline-block">
-              <HibiscusLogo size="md" showSubtitle={true} />
+              <HibiscusLogo
+                size="md"
+                showSubtitle={true}
+                textColor="text-white"
+                iconColor="text-white"
+                subtitleColor="text-white/85"
+              />
             </div>
             <p className="font-display text-lg uppercase tracking-wider text-aflora-yellow font-bold mt-2">
               {ESTABLISHMENT.slogan}

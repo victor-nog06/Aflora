@@ -6,6 +6,8 @@ interface HibiscusLogoProps {
   showSubtitle?: boolean;
   showIcon?: boolean;
   textColor?: string;
+  iconColor?: string;
+  subtitleColor?: string;
   hideSubtitleOnMobile?: boolean;
 }
 
@@ -15,6 +17,8 @@ export const HibiscusLogo: React.FC<HibiscusLogoProps> = ({
   showSubtitle = true,
   showIcon = true,
   textColor = 'text-aflora-primary',
+  iconColor = 'text-aflora-primary',
+  subtitleColor = 'text-aflora-muted',
   hideSubtitleOnMobile = false
 }) => {
   const sizeClasses = {
@@ -27,7 +31,7 @@ export const HibiscusLogo: React.FC<HibiscusLogoProps> = ({
     <div className={`flex flex-col items-center justify-center select-none ${className}`}>
       {/* Hibiscus Flower Icon */}
       {showIcon && (
-        <div className={`${sizeClasses.icon} text-aflora-primary mb-1 transition-transform duration-300 hover:scale-105`}>
+        <div className={`${sizeClasses.icon} ${iconColor} mb-1 transition-transform duration-300 hover:scale-105`}>
           <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
             <g transform="translate(50, 48)">
               {/* Petals */}
@@ -54,7 +58,7 @@ export const HibiscusLogo: React.FC<HibiscusLogoProps> = ({
 
       {/* Subtitle */}
       {showSubtitle && (
-        <span className={`font-sans font-medium text-aflora-muted uppercase mt-1 ${sizeClasses.sub} ${hideSubtitleOnMobile ? 'hidden md:block' : ''}`}>
+        <span className={`font-sans font-medium ${subtitleColor} uppercase mt-1 ${sizeClasses.sub} ${hideSubtitleOnMobile ? 'hidden md:block' : ''}`}>
           AÇAÍ &bull; SMOOTHIES &bull; FRESH FOOD
         </span>
       )}
