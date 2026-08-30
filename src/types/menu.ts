@@ -1,10 +1,10 @@
 export type CategoryId = 
-  | 'shakes' 
-  | 'refreshers' 
-  | 'salgados' 
-  | 'doces' 
-  | 'acai' 
-  | 'saladas';
+  | 'smoothies'
+  | 'refresh'
+  | 'crepes-salgados'
+  | 'crepes-doces'
+  | 'tortas'
+  | 'promocoes';
 
 export interface Category {
   id: CategoryId;

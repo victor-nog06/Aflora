@@ -91,7 +91,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
             <div className="relative w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-elevated border-4 border-white">
               <img 
                 src="https://images.unsplash.com/photo-1553530666-ba11a7da3888?auto=format&fit=crop&w=1000&q=85" 
-                alt="AFLORA Smoothie de Açaí e Frutas Frescas"
+                alt="AFLORA Smoothie Margarida"
                 className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-700"
                 loading="eager"
               />
@@ -102,8 +102,8 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick }) => {
                   ★
                 </div>
                 <div>
-                  <p className="font-display text-sm font-semibold uppercase text-aflora-text">Violeta &bull; Shake Assinatura</p>
-                  <p className="font-sans text-xs text-aflora-muted">Açaí, banana congelada, proteína e leite de aveia</p>
+                  <p className="font-display text-sm font-semibold uppercase text-aflora-text">Margarida &bull; Smoothie Proteico</p>
+                  <p className="font-sans text-xs text-aflora-muted">Morango, banana, iogurte natural, tâmara e 20 g de proteína</p>
                 </div>
               </div>
             </div>
