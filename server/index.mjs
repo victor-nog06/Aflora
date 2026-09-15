@@ -27,6 +27,7 @@ const fail=(res,error)=>{console.error(error);if(error?.code==='PGRST204'&&/prod
 const auditAction={POST:'create',PUT:'update',PATCH:'update',DELETE:'delete'};
 app.use('/api',(req,res,next)=>{res.on('finish',()=>{const action=auditAction[req.method];if(!action||res.statusCode>=400||!req.user||req.path.startsWith('/auth'))return;const parts=req.path.split('/').filter(Boolean);if(parts[0]==='api')parts.shift();const entityType=parts[0],entityId=parts[1]||req.body?.id||null;const safeDetails={};for(const [key,value] of Object.entries(req.body||{})){if(!['password','password_hash','token'].includes(key))safeDetails[key]=value}db.from('audit_logs').insert({actor_id:req.user.sub,actor_username:req.user.username,action,entity_type:entityType,entity_id:String(entityId||''),details:safeDetails,ip_address:req.ip}).then(({error})=>{if(error&&error.code!=='PGRST205')console.error('Falha ao registrar auditoria:',error)})});next()});
 
+app.get('/api/health',(_req,res)=>res.json({ok:true}));
 app.post('/api/auth/login',limitLogin,async(req,res)=>{try{const username=String(req.body?.username||'').trim().toLowerCase(),password=String(req.body?.password||'');if(!username)return res.status(400).json({message:'Informe o usuÃ¡rio.'});const {data:user,error}=await db.from('app_users').select('id,username,password_hash,role,active').eq('username',username).maybeSingle();if(error)throw error;if(!user?.active)return res.status(401).json({message:'UsuÃ¡rio ou senha incorretos.'});if(!user.password_hash||user.password_hash==='FIRST_ACCESS'){const token=jwt.sign({sub:user.id,purpose:'password_setup'},process.env.SESSION_SECRET,{expiresIn:'15m',issuer:'aflora-api'});res.cookie(setupCookie,token,{...cookieOptions,maxAge:900000});attempts.delete(req.ip);return res.json({setupRequired:true,username:user.username})}if(!password||!await bcrypt.compare(password,user.password_hash))return res.status(401).json({message:'UsuÃ¡rio ou senha incorretos.'});startSession(res,user);attempts.delete(req.ip);res.json({user:{username:user.username,role:user.role}})}catch(e){fail(res,e)}});
 app.post('/api/auth/set-password',async(req,res)=>{try{let claim;try{claim=jwt.verify(req.cookies[setupCookie],process.env.SESSION_SECRET)}catch{return res.status(401).json({message:'O prazo do primeiro acesso expirou. Entre novamente.'})}if(claim.purpose!=='password_setup')return res.status(401).json({message:'SolicitaÃ§Ã£o invÃ¡lida.'});const password=String(req.body?.password||'');if(password.length<8)return res.status(400).json({message:'A senha deve ter pelo menos 8 caracteres.'});const password_hash=await bcrypt.hash(password,12);const {data:user,error}=await db.from('app_users').update({password_hash}).eq('id',claim.sub).select('id,username,role').single();if(error)throw error;res.clearCookie(setupCookie,cookieOptions);startSession(res,user);res.json({user:{username:user.username,role:user.role}})}catch(e){fail(res,e)}});
 app.post('/api/auth/logout',(_req,res)=>{res.clearCookie(cookie,cookieOptions);res.clearCookie(setupCookie,cookieOptions);res.status(204).end()});
@@ -77,5 +78,12 @@ async function bootstrap(){const username=String(process.env.ADMIN_USERNAME||'')
 export default app;
 
 if(process.argv[1]&&import.meta.url===new URL(`file:///${process.argv[1].replace(/\\/g,'/')}`).href){
-  bootstrap().then(()=>app.listen(port,()=>console.log(`Aflora API na porta ${port}`))).catch(e=>{console.error(e);process.exit(1)});
+  const server=app.listen(port,'127.0.0.1',()=>{
+    console.log(`Aflora API na porta ${port}`);
+    bootstrap().catch(e=>console.error('Falha ao sincronizar o usuário administrador inicial:',e));
+  });
+  await new Promise((resolve,reject)=>{
+    server.once('close',resolve);
+    server.once('error',reject);
+  });
 }
