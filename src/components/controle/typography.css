@@ -1,0 +1,8 @@
+.controle-shell,.controle-shell button,.controle-shell input,.controle-shell select,
+.ctl-login,.ctl-login input,.ctl-login button,.ctl-auth-loading{font-family:'Inter',sans-serif}
+.controle-shell h1,.controle-shell h2,.controle-shell h3,.controle-shell strong,
+.controle-shell .ctl-brand-mark,.ctl-login h1,.ctl-login h2,.ctl-login h3,.ctl-login strong{font-family:'Inter',sans-serif}
+.ctl-page-title h1{font-weight:700;letter-spacing:-.045em}
+.ctl-card-head h3,.product-card h3,.employee-actions b,.employee-sale-card h3{font-weight:650;letter-spacing:-.025em}
+.ctl-kpi>strong,.batch-ring strong,.sale-modal>footer strong{font-weight:700;letter-spacing:-.035em}
+.ctl-brand-mark{font-style:normal;font-weight:800}

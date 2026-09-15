@@ -4,16 +4,15 @@
 
 @layer base {
   html {
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Inter', sans-serif;
     background-color: #FAF7F2;
     color: #2C2220;
     -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Oswald', sans-serif;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: -0.025em;
   }
 }
 

@@ -9,9 +9,14 @@ import { InfoSection } from './components/InfoSection';
 import { Footer } from './components/Footer';
 import { BotanicalBackground } from './components/BotanicalBackground';
 import type { Product } from './types/menu';
+import { Controle } from './components/controle/Controle';
 
 export function App() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  if (window.location.pathname.startsWith('/controle')) {
+    return <Controle />;
+  }
 
   const handleScrollToMenu = () => {
     const element = document.getElementById('cardapio');

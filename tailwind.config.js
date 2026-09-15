@@ -22,8 +22,8 @@ export default {
         }
       },
       fontFamily: {
-        display: ['Oswald', 'sans-serif'], // condensed heavy typography for headers
-        sans: ['Outfit', 'sans-serif'],   // clean secondary typography
+        display: ['Inter', 'sans-serif'],
+        sans: ['Inter', 'sans-serif'],
       },
       boxShadow: {
         'soft': '0 4px 20px -2px rgba(44, 34, 32, 0.06)',

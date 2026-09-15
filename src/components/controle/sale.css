@@ -1,0 +1,20 @@
+.sale-type { margin-bottom: 22px; }
+.sale-type > span { display:block; font-size:10px; font-weight:700; margin-bottom:8px; }
+.sale-type > div { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.sale-type button { min-height:92px; padding:13px; border:1px solid var(--ctl-line); border-radius:10px; background:#fff; color:#5d5552; text-align:left; cursor:pointer; }
+.sale-type button svg { display:block; width:20px; margin-bottom:8px; color:#9a8e8a; }
+.sale-type button b,.sale-type button small { display:block; }
+.sale-type button b { font-size:10px; }
+.sale-type button small { margin-top:3px; font-size:8px; color:var(--ctl-muted); }
+.sale-type button.active { border-color:var(--ctl-wine); background:var(--ctl-pink); box-shadow:0 0 0 1px var(--ctl-wine); }
+.sale-type button.active svg,.sale-type button.active b { color:var(--ctl-wine); }
+.sale-empty { grid-column:1/-1; min-height:130px; display:flex!important; flex-direction:column; align-items:center!important; justify-content:center; gap:4px!important; border:1px dashed var(--ctl-line); border-radius:9px; color:var(--ctl-muted); }
+.sale-empty svg { width:23px; margin-bottom:4px; }
+.sale-empty b { font-size:10px; color:#5d5552; }
+.sale-empty small { max-width:260px; text-align:center; line-height:1.4; }
+.cart-list > div { grid-template-columns:1fr auto auto; gap:10px; }
+.cart-actions { display:flex; gap:3px; }
+.cart-actions button { width:24px; height:24px; display:grid; place-items:center; border:1px solid var(--ctl-line); border-radius:5px; background:#fff; }
+.cart-actions button:disabled { opacity:.35; }
+.cart-actions svg { width:11px; }
+@media(max-width:480px){.sale-type>div{grid-template-columns:1fr}.sale-type button{min-height:75px}.sale-type button svg{float:left;margin:7px 10px 12px 0}}
