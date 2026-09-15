@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
 
 const app = express();
-const port = Number(process.env.PORT || 3001);
+const port = Number(process.env.PORT || 3002);
 const production = process.env.NODE_ENV === 'production';
 const missingConfig=['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','SESSION_SECRET'].filter(key=>!process.env[key]);
 if(missingConfig.length) throw new Error(`ConfiguraÃ§Ã£o ausente no arquivo .env: ${missingConfig.join(', ')}`);
