@@ -11,7 +11,7 @@ const production = process.env.NODE_ENV === 'production';
 const missingConfig=['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','SESSION_SECRET'].filter(key=>!process.env[key]);
 if(missingConfig.length) throw new Error(`ConfiguraÃ§Ã£o ausente no arquivo .env: ${missingConfig.join(', ')}`);
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth:{persistSession:false,autoRefreshToken:false} });
-app.disable('x-powered-by'); app.use(express.json({limit:'100kb'})); app.use(cookieParser());
+app.disable('x-powered-by'); app.set('trust proxy',1); app.use(express.json({limit:'100kb'})); app.use(cookieParser());
 
 const attempts=new Map();
 const limitLogin=(req,res,next)=>{const key=req.ip,now=Date.now(),item=attempts.get(key)||{count:0,reset:now+900000};if(now>item.reset){item.count=0;item.reset=now+900000}if(item.count>=10)return res.status(429).json({message:'Muitas tentativas. Aguarde alguns minutos.'});item.count++;attempts.set(key,item);next()};
@@ -73,4 +73,9 @@ app.delete('/api/users/:id',auth,admin,async(req,res)=>{try{if(req.params.id===r
 
 async function ensureUser(username,password,role){if(!username||!password)return;username=username.trim().toLowerCase();const password_hash=await bcrypt.hash(password,12);const {data,error}=await db.from('app_users').select('id').eq('username',username).maybeSingle();if(error)throw error;const result=data?await db.from('app_users').update({password_hash,role,active:true}).eq('id',data.id):await db.from('app_users').insert({username,password_hash,role,active:true});if(result.error)throw result.error}
 async function bootstrap(){const username=String(process.env.ADMIN_USERNAME||'').trim().toLowerCase();await ensureUser(process.env.ADMIN_USERNAME,process.env.ADMIN_PASSWORD,username==='victor.nogueira'?'developer':'admin')}
-bootstrap().then(()=>app.listen(port,()=>console.log(`Aflora API na porta ${port}`))).catch(e=>{console.error(e);process.exit(1)});
+
+export default app;
+
+if(process.argv[1]&&import.meta.url===new URL(`file:///${process.argv[1].replace(/\\/g,'/')}`).href){
+  bootstrap().then(()=>app.listen(port,()=>console.log(`Aflora API na porta ${port}`))).catch(e=>{console.error(e);process.exit(1)});
+}
