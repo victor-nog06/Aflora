@@ -46,3 +46,8 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+html,
+body,
+#root {
+  touch-action: manipulation;
+}

@@ -8,8 +8,11 @@ async function request<T>(path:string, options?:RequestInit):Promise<T>{
   let response:Response;
   try{response=await fetch(path,{...options,credentials:'same-origin',headers:{'Content-Type':'application/json',...(options?.headers||{})}})}
   catch{throw new Error('Serviço temporariamente indisponível. Tente novamente em instantes.')}
-  if(!response.ok){const body=await response.json().catch(()=>({}));const fallback=response.status>=500?'Não foi possível carregar seus dados. Tente novamente.':'Não foi possível concluir a operação.';throw new Error(body.message||fallback);}
-  return response.status===204?undefined as T:response.json();
+  const text=response.status===204?'':await response.text();
+  let body:Record<string,unknown>={};
+  try{body=text?JSON.parse(text):{}}catch{/* O proxy pode responder texto ou HTML. */}
+  if(!response.ok){const detail=typeof body.message==='string'?body.message:'';const fallback=response.status>=500?'O servidor não conseguiu processar a solicitação.':'Não foi possível concluir a operação.';throw new Error(`${detail||fallback} (HTTP ${response.status})`);}
+  return response.status===204?undefined as T:body as T;
 }
 export const getSession=()=>request<{user:SessionUser}>('/api/auth/session');
 export const login=(username:string,password:string)=>request<{user?:SessionUser;setupRequired?:boolean;username?:string}>('/api/auth/login',{method:'POST',body:JSON.stringify({username,password})});

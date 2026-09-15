@@ -1,0 +1,77 @@
+.cost-table {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.cost-table .cost-row {
+  grid-template-columns:
+    minmax(190px, 1.65fr)
+    minmax(120px, .95fr)
+    minmax(135px, .9fr)
+    minmax(90px, .55fr)
+    minmax(124px, auto);
+  column-gap: 20px;
+  min-width: 760px;
+  padding: 16px 8px;
+}
+
+.cost-table .cost-head {
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+
+.cost-table .cost-row > * {
+  min-width: 0;
+}
+
+.cost-table .cost-row > span:nth-child(3) b,
+.cost-table .cost-row > span:nth-child(3) small {
+  display: block;
+}
+
+.cost-table .cost-row > span:nth-child(3) small {
+  margin-top: 4px;
+  line-height: 1.25;
+}
+
+.cost-table .cost-row > strong,
+.cost-table .cost-head > span:nth-child(4) {
+  text-align: right;
+  justify-self: stretch;
+}
+
+.cost-table .cost-row > .row-actions,
+.cost-table .cost-head > span:nth-child(5) {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .cost-table .cost-row {
+    grid-template-columns:
+      minmax(150px, 1.35fr)
+      minmax(110px, .9fr)
+      minmax(80px, .55fr)
+      minmax(112px, auto);
+    min-width: 570px;
+    column-gap: 14px;
+  }
+
+  .cost-table .cost-row > span:nth-child(2),
+  .cost-table .cost-head > span:nth-child(2) {
+    display: none;
+  }
+
+  .cost-table .cost-row > span:nth-child(3),
+  .cost-table .cost-head > span:nth-child(3) {
+    display: block;
+  }
+
+  .cost-table .cost-head > span:nth-child(4) {
+    grid-column: 3;
+  }
+
+  .cost-table .cost-head > span:nth-child(5) {
+    grid-column: 4;
+  }
+}
