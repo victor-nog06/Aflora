@@ -1,8 +1,8 @@
-import type { AcaiBatch, CostEntry, Material, MaterialCategory, Product, Sale, StoreData } from '../types/controle';
+import type { AcaiBatch, Combo, CostEntry, CustomerTab, Material, MaterialCategory, Product, Sale, StoreData } from '../types/controle';
 
 export type UserRole = 'developer' | 'admin' | 'employee';
 export interface SessionUser { username: string; role: UserRole }
-export const emptyStore: StoreData = { products: [], sales: [], batches: [], costs: [], materialCategories: [], materials: [] };
+export const emptyStore: StoreData = { products: [], combos: [], sales: [], tabs: [], batches: [], costs: [], materialCategories: [], materials: [] };
 
 async function request<T>(path:string, options?:RequestInit):Promise<T>{
   let response:Response;
@@ -20,7 +20,9 @@ export const completeFirstAccess=(password:string)=>request<{user:SessionUser}>(
 export const logout=()=>request<void>('/api/auth/logout',{method:'POST'});
 const normalizeStore=(data:Partial<StoreData>|null|undefined):StoreData=>({
   products:Array.isArray(data?.products)?data.products:[],
+  combos:Array.isArray(data?.combos)?data.combos:[],
   sales:Array.isArray(data?.sales)?data.sales:[],
+  tabs:Array.isArray(data?.tabs)?data.tabs:[],
   batches:Array.isArray(data?.batches)?data.batches:[],
   costs:Array.isArray(data?.costs)?data.costs:[],
   materialCategories:Array.isArray(data?.materialCategories)?data.materialCategories:[],
@@ -30,9 +32,16 @@ export const loadStore=async()=>normalizeStore(await request<Partial<StoreData>>
 export const createSale=(sale:Sale)=>request('/api/sales',{method:'POST',body:JSON.stringify(sale)});
 export const updateSale=(id:string,payment:Sale['payment'])=>request<void>(`/api/sales/${id}`,{method:'PATCH',body:JSON.stringify({payment})});
 export const deleteSale=(id:string)=>request<void>(`/api/sales/${id}`,{method:'DELETE'});
+export const createTab=(tab:CustomerTab)=>request('/api/tabs',{method:'POST',body:JSON.stringify(tab)});
+export const addTabItems=(id:string,items:CustomerTab['items'])=>request<void>(`/api/tabs/${id}/items`,{method:'POST',body:JSON.stringify({items})});
+export const closeTab=(id:string,payment:Sale['payment'],discount:number)=>request<{sale:Sale}>(`/api/tabs/${id}/close`,{method:'POST',body:JSON.stringify({payment,discount})});
+export const deleteTab=(id:string)=>request<void>(`/api/tabs/${id}`,{method:'DELETE'});
 export const createProduct=(product:Product)=>request('/api/products',{method:'POST',body:JSON.stringify(product)});
 export const updateProduct=(product:Product)=>request<void>(`/api/products/${product.id}`,{method:'PUT',body:JSON.stringify(product)});
 export const deleteProduct=(id:string)=>request<void>(`/api/products/${id}`,{method:'DELETE'});
+export const createCombo=(combo:Combo)=>request('/api/combos',{method:'POST',body:JSON.stringify(combo)});
+export const updateCombo=(combo:Combo)=>request<void>(`/api/combos/${combo.id}`,{method:'PUT',body:JSON.stringify(combo)});
+export const deleteCombo=(id:string)=>request<void>(`/api/combos/${id}`,{method:'DELETE'});
 export const createMaterialCategory=(category:MaterialCategory)=>request('/api/material-categories',{method:'POST',body:JSON.stringify(category)});
 export const deleteMaterialCategory=(id:string)=>request<void>(`/api/material-categories/${id}`,{method:'DELETE'});
 export const createMaterial=(material:Material)=>request('/api/materials',{method:'POST',body:JSON.stringify(material)});

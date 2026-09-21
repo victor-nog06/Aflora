@@ -20,18 +20,34 @@ export interface RecipeItem { materialId:string;quantity:number }
 
 export interface SaleItem {
   productId?: string;
+  comboId?: string;
   name: string;
   quantity: number;
   unitPrice: number;
-  kind: 'product' | 'acai';
+  kind: 'product' | 'combo' | 'acai';
 }
+
+export interface ComboItem { productId: string; quantity: number }
+export interface Combo { id:string; name:string; price:number; active:boolean; items:ComboItem[] }
 
 export interface Sale {
   id: string;
   createdAt: string;
   items: SaleItem[];
   total: number;
+  subtotal?: number;
+  discount: number;
   payment: 'Pix' | 'Dinheiro' | 'Cartão';
+}
+
+export interface CustomerTab {
+  id: string;
+  customerName: string;
+  createdAt: string;
+  closedAt?: string;
+  items: SaleItem[];
+  total: number;
+  status: 'open' | 'paid';
 }
 
 export interface AcaiBatch {
@@ -50,7 +66,9 @@ export interface CostEntry { id:string; description:string; category:CostCategor
 
 export interface StoreData {
   products: Product[];
+  combos: Combo[];
   sales: Sale[];
+  tabs: CustomerTab[];
   batches: AcaiBatch[];
   costs: CostEntry[];
   materialCategories: MaterialCategory[];

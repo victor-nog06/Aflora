@@ -3,6 +3,8 @@ import {
   BarChart3,
   Box,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   ClipboardList,
   Clock3,
@@ -31,22 +33,28 @@ import {
 import { readSheet } from "read-excel-file/browser";
 import {
   addMaterialStock,
+  addTabItems,
   adjustStock,
   closeBatch,
+  closeTab,
   completeFirstAccess,
   createBatch,
+  createCombo,
   createCost,
   createMaterial,
   createMaterialCategory,
   createProduct,
   createSale,
+  createTab,
   createUser,
   deleteBatch,
+  deleteCombo,
   deleteCost,
   deleteMaterial,
   deleteMaterialCategory,
   deleteProduct,
   deleteSale,
+  deleteTab,
   deleteUser,
   emptyStore,
   getSession,
@@ -59,6 +67,7 @@ import {
   setCostPaid,
   setUserActive,
   updateCost,
+  updateCombo,
   updateMaterial,
   updateProduct,
   updateSale,
@@ -69,7 +78,9 @@ import {
 } from "../../lib/controleStore";
 import type {
   CostCategory,
+  Combo,
   CostEntry,
+  CustomerTab,
   Material,
   Product,
   RecipeItem,
@@ -83,6 +94,7 @@ import "./auth.css";
 import "./password.css";
 import "./typography.css";
 import "./costs.css";
+import "./cost-filters.css";
 import "./users.css";
 import "./actions.css";
 import "./audit.css";
@@ -97,6 +109,8 @@ import "./mobile.css";
 type View =
   | "Visão geral"
   | "Vendas"
+  | "Comandas"
+  | "Combos"
   | "Produtos"
   | "Estoque"
   | "Açaí"
@@ -116,6 +130,8 @@ const uid = (prefix: string) =>
 const nav: { label: View; icon: typeof LayoutDashboard }[] = [
   { label: "Visão geral", icon: LayoutDashboard },
   { label: "Vendas", icon: ShoppingBag },
+  { label: "Comandas", icon: ClipboardList },
+  { label: "Combos", icon: ShoppingBag },
   { label: "Produtos", icon: Package },
   { label: "Estoque", icon: Box },
   { label: "Açaí", icon: Droplets },
@@ -158,7 +174,7 @@ export function Controle() {
   const [view, setView] = useState<View>("Visão geral");
   const [menuOpen, setMenuOpen] = useState(false);
   const [modal, setModal] = useState<
-    "sale" | "product" | "batch" | "cost" | null
+    "sale" | "tab" | "combo" | "product" | "batch" | "cost" | null
   >(null);
   const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(true);
@@ -188,7 +204,7 @@ export function Controle() {
   const canViewAudit = user.username === "victor.nogueira";
   const allowedNav = nav.filter(
     (item) =>
-      (isAdmin || ["Visão geral", "Vendas", "Estoque"].includes(item.label)) &&
+      (isAdmin || ["Visão geral", "Vendas", "Comandas", "Estoque"].includes(item.label)) &&
       (item.label !== "Auditoria" || canViewAudit),
   );
 
@@ -320,6 +336,15 @@ export function Controle() {
               onNew={() => setModal("sale")}
               employee={!isAdmin}
             />
+          ) : view === "Comandas" ? (
+            <Tabs
+              data={data}
+              onNew={() => setModal("tab")}
+              onRefresh={async () => setData(await loadStore())}
+              notify={notify}
+            />
+          ) : view === "Combos" && isAdmin ? (
+            <Combos data={data} onNew={() => setModal("combo")} onRefresh={async () => setData(await loadStore())} notify={notify} />
           ) : view === "Produtos" && isAdmin ? (
             <Products data={data} onNew={() => setModal("product")} />
           ) : view === "Estoque" ? (
@@ -424,6 +449,21 @@ export function Controle() {
             setModal(null);
           }}
         />
+      )}
+      {modal === "tab" && (
+        <TabModal
+          data={data}
+          onClose={() => setModal(null)}
+          onSave={async (tab) => {
+            await createTab(tab);
+            setData(await loadStore());
+            notify("Comanda aberta e itens baixados do estoque.");
+            setModal(null);
+          }}
+        />
+      )}
+      {modal === "combo" && isAdmin && (
+        <ComboModal products={data.products} onClose={() => setModal(null)} onSave={async (combo) => { await createCombo(combo); setData(await loadStore()); notify("Combo cadastrado."); setModal(null); }} />
       )}
       {modal === "product" && isAdmin && (
         <ProductModal
@@ -986,6 +1026,7 @@ function SalesTable({
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
+                {s.discount > 0 ? ` • ${s.discount}% OFF` : ""}
               </small>
             </span>
             <span>
@@ -1094,6 +1135,99 @@ function Sales({
   );
 }
 
+function Tabs({ data, onNew, onRefresh, notify }: { data: StoreData; onNew: () => void; onRefresh: () => Promise<void>; notify: (message: string) => void }) {
+  const [paying, setPaying] = useState<CustomerTab | null>(null);
+  const [adding, setAdding] = useState<CustomerTab | null>(null);
+  const [removing, setRemoving] = useState<CustomerTab | null>(null);
+  const [payment, setPayment] = useState<"Pix" | "Dinheiro" | "Cartão">("Pix");
+  const [discount, setDiscount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const discountValue = Math.min(100, Math.max(0, Number(discount.replace(",", ".")) || 0));
+  const payable = paying ? paying.total * (1 - discountValue / 100) : 0;
+  const finish = async () => {
+    if (!paying) return;
+    setBusy(true); setError("");
+    try { await closeTab(paying.id, payment, discountValue); await onRefresh(); setPaying(null); notify("Comanda paga e venda registrada."); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const remove = async () => {
+    if (!removing) return;
+    setBusy(true); setError("");
+    try { await deleteTab(removing.id); await onRefresh(); setRemoving(null); notify("Comanda cancelada e itens devolvidos ao estoque."); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return <>
+    <PageTitle eyebrow="ATENDIMENTO" title="Comandas" text="Acompanhe os produtos consumidos e ainda não pagos." action={<button className="ctl-primary" onClick={onNew}><Plus /> Nova comanda</button>} />
+    {data.tabs.length ? <div className="tabs-grid">{data.tabs.map((tab) => <article className="ctl-card tab-card" key={tab.id}>
+      <header><div><small>COMANDA ABERTA</small><h3>{tab.customerName}</h3></div><ClipboardList /></header>
+      <div className="tab-items">{tab.items.map((item, index) => <span key={`${item.productId || item.name}-${index}`}><i>{item.quantity}× {item.name}</i><b>{money(item.quantity * item.unitPrice)}</b></span>)}</div>
+      <footer><div><small>Total pendente</small><strong>{money(tab.total)}</strong></div><div className="tab-actions"><button className="ctl-secondary" onClick={()=>setAdding(tab)}><Plus/> Itens</button><button className="ctl-secondary danger" onClick={() => { setError(""); setRemoving(tab); }}>Cancelar</button><button className="ctl-primary" onClick={() => { setError(""); setDiscount(""); setPaying(tab); }}>Receber</button></div></footer>
+    </article>)}</div> : <div className="ctl-card ctl-empty"><ClipboardList /><p>Nenhuma comanda aberta.</p><button className="ctl-secondary" onClick={onNew}>Abrir primeira comanda</button></div>}
+    {paying && <Modal title={`Receber de ${paying.customerName}`} onClose={() => setPaying(null)}><div className="sale-modal">
+      <label className="field"><span>Forma de pagamento</span><div className="pay-options">{(["Pix", "Dinheiro", "Cartão"] as const).map((p) => <button className={payment === p ? "active" : ""} onClick={() => setPayment(p)} key={p}>{p}</button>)}</div></label>
+      <label className="field"><span>Desconto (%)</span><div className="percent-input"><input inputMode="decimal" min="0" max="100" placeholder="0" value={discount} onChange={(e) => setDiscount(e.target.value)} /><b>%</b></div></label>
+      {error && <div className="modal-error sale-error">{error}</div>}
+      <footer><div><small>Total a receber</small><strong>{money(payable)}</strong></div><button className="ctl-primary" disabled={busy} onClick={finish}>{busy ? "Recebendo..." : "Confirmar pagamento"}</button></footer>
+    </div></Modal>}
+    {removing && <ConfirmModal title="Cancelar comanda" text={`Cancelar a comanda de ${removing.customerName}? Os itens serão devolvidos ao estoque.`} error={error} onClose={() => setRemoving(null)} onConfirm={remove} />}
+    {adding&&<TabItemsModal tab={adding} data={data} onClose={()=>setAdding(null)} onSave={async items=>{await addTabItems(adding.id,items);await onRefresh();setAdding(null);notify("Itens adicionados à comanda.")}}/>}
+  </>;
+}
+
+function TabModal({ data, onClose, onSave }: { data: StoreData; onClose: () => void; onSave: (tab: CustomerTab) => Promise<void> }) {
+  const [customerName, setCustomerName] = useState("");
+  const [items, setItems] = useState<SaleItem[]>([]);
+  const [acaiValue, setAcaiValue] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const add = (p: Product) => setItems((old) => old.some((i) => i.productId === p.id) ? old.map((i) => i.productId === p.id ? { ...i, quantity: i.quantity + 1 } : i) : [...old, { productId: p.id, name: p.name, quantity: 1, unitPrice: p.price, kind: "product" }]);
+  const addCombo = (c: Combo) => setItems((old) => old.some((i) => i.comboId === c.id) ? old.map((i) => i.comboId === c.id ? { ...i, quantity: i.quantity + 1 } : i) : [...old, { comboId: c.id, name: c.name, quantity: 1, unitPrice: c.price, kind: "combo" }]);
+  const addAcai = () => { const value=Number(acaiValue.replace(",",".")); if(value>0){setItems(old=>[...old,{name:"Açaí self-service",quantity:1,unitPrice:value,kind:"acai"}]);setAcaiValue("")} };
+  const change = (id: string | undefined, delta: number) => setItems((old) => old.flatMap((i) => (i.productId||i.comboId) !== id ? [i] : i.quantity + delta > 0 ? [{ ...i, quantity: i.quantity + delta }] : []));
+  const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const submit = async () => { setSaving(true); setError(""); try { await onSave({ id: uid("c"), customerName: customerName.trim(), createdAt: new Date().toISOString(), items, total, status: "open" }); } catch (e) { setError((e as Error).message); } finally { setSaving(false); } };
+  return <Modal title="Abrir comanda" onClose={onClose}><div className="sale-modal">
+    <label className="field"><span>Nome da pessoa</span><div className="text-input"><input autoFocus placeholder="Ex.: Mariana" value={customerName} onChange={(e) => setCustomerName(e.target.value)} /></div></label>
+    <label className="field"><span>Açaí self-service</span><div className="tab-acai-input"><div className="money-input"><b>R$</b><input inputMode="decimal" placeholder="Valor da pesagem" value={acaiValue} onChange={e=>setAcaiValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addAcai()}}}/></div><button type="button" className="ctl-secondary" disabled={Number(acaiValue.replace(",","."))<=0} onClick={addAcai}><Plus/> Incluir</button></div><small>Informe o valor exibido pela balança.</small></label>
+    <div className="quick-products"><span>Produtos e combos consumidos</span><div>{data.products.filter((p) => p.active).map((p) => <button key={p.id} onClick={() => add(p)}><Plus /><span>{p.name}<small>{money(p.price)}</small></span></button>)}{data.combos.filter(c=>c.active).map(c=><button key={c.id} onClick={()=>addCombo(c)}><Plus/><span>{c.name}<small>Combo · {money(c.price)}</small></span></button>)}</div></div>
+    {!!items.length && <div className="cart-list">{items.map((i,index) => {const id=i.productId||i.comboId;return <div key={id||`acai-${index}`}><span>{i.quantity}× {i.name}</span><strong>{money(i.quantity * i.unitPrice)}</strong><span className="cart-actions">{i.kind!=="acai"&&<><button onClick={() => change(id, -1)}><Minus /></button><button onClick={() => change(id, 1)}><Plus /></button></>}<button onClick={() => setItems((old) => i.kind==="acai"?old.filter((_,itemIndex)=>itemIndex!==index):old.filter((x) => (x.productId||x.comboId) !== id))}><X /></button></span></div>})}</div>}
+    {error && <div className="modal-error sale-error">{error}</div>}
+    <footer><div><small>Total da comanda</small><strong>{money(total)}</strong></div><button className="ctl-primary" disabled={!customerName.trim() || !items.length || saving} onClick={submit}>{saving ? "Abrindo..." : "Abrir comanda"}</button></footer>
+  </div></Modal>;
+}
+
+function TabItemsModal({tab,data,onClose,onSave}:{tab:CustomerTab;data:StoreData;onClose:()=>void;onSave:(items:SaleItem[])=>Promise<void>}) {
+  const [items,setItems]=useState<SaleItem[]>([]),[acaiValue,setAcaiValue]=useState(""),[saving,setSaving]=useState(false),[error,setError]=useState("");
+  const addProduct=(p:Product)=>setItems(old=>old.some(i=>i.productId===p.id)?old.map(i=>i.productId===p.id?{...i,quantity:i.quantity+1}:i):[...old,{productId:p.id,name:p.name,quantity:1,unitPrice:p.price,kind:"product"}]);
+  const addCombo=(c:Combo)=>setItems(old=>old.some(i=>i.comboId===c.id)?old.map(i=>i.comboId===c.id?{...i,quantity:i.quantity+1}:i):[...old,{comboId:c.id,name:c.name,quantity:1,unitPrice:c.price,kind:"combo"}]);
+  const addAcai=()=>{const value=Number(acaiValue.replace(",","."));if(value>0){setItems(old=>[...old,{name:"Açaí self-service",quantity:1,unitPrice:value,kind:"acai"}]);setAcaiValue("")}};
+  const change=(id:string|undefined,delta:number)=>setItems(old=>old.flatMap(i=>(i.productId||i.comboId)!==id?[i]:i.quantity+delta>0?[{...i,quantity:i.quantity+delta}]:[]));
+  const addedTotal=items.reduce((sum,item)=>sum+item.quantity*item.unitPrice,0);
+  return <Modal title={`Adicionar itens · ${tab.customerName}`} onClose={onClose}><div className="sale-modal">
+    <label className="field"><span>Açaí self-service</span><div className="tab-acai-input"><div className="money-input"><b>R$</b><input autoFocus inputMode="decimal" placeholder="Valor da pesagem" value={acaiValue} onChange={e=>setAcaiValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addAcai()}}}/></div><button type="button" className="ctl-secondary" disabled={Number(acaiValue.replace(",","."))<=0} onClick={addAcai}><Plus/> Incluir</button></div></label>
+    <div className="quick-products"><span>Produtos e combos</span><div>{data.products.filter(p=>p.active).map(p=><button key={p.id} onClick={()=>addProduct(p)}><Plus/><span>{p.name}<small>{money(p.price)}</small></span></button>)}{data.combos.filter(c=>c.active).map(c=><button key={c.id} onClick={()=>addCombo(c)}><Plus/><span>{c.name}<small>Combo · {money(c.price)}</small></span></button>)}</div></div>
+    {!!items.length&&<div className="cart-list">{items.map((item,index)=>{const id=item.productId||item.comboId;return <div key={id||`acai-${index}`}><span>{item.quantity}× {item.name}</span><strong>{money(item.quantity*item.unitPrice)}</strong><span className="cart-actions">{item.kind!=="acai"&&<><button onClick={()=>change(id,-1)}><Minus/></button><button onClick={()=>change(id,1)}><Plus/></button></>}<button onClick={()=>setItems(old=>item.kind==="acai"?old.filter((_,i)=>i!==index):old.filter(x=>(x.productId||x.comboId)!==id))}><X/></button></span></div>})}</div>}
+    {error&&<div className="modal-error sale-error">{error}</div>}<footer><div><small>Novo total: {money(tab.total)} + {money(addedTotal)}</small><strong>{money(tab.total+addedTotal)}</strong></div><button className="ctl-primary" disabled={!items.length||saving} onClick={async()=>{setSaving(true);setError("");try{await onSave(items)}catch(e){setError((e as Error).message)}finally{setSaving(false)}}}>{saving?"Adicionando...":"Adicionar à comanda"}</button></footer>
+  </div></Modal>;
+}
+
+function Combos({ data, onNew, onRefresh, notify }: { data:StoreData; onNew:()=>void; onRefresh:()=>Promise<void>; notify:(s:string)=>void }) {
+  const [editing,setEditing]=useState<Combo|null>(null),[deleting,setDeleting]=useState<Combo|null>(null),[error,setError]=useState("");
+  const remove=async()=>{if(!deleting)return;try{await deleteCombo(deleting.id);await onRefresh();setDeleting(null);notify("Combo excluído.")}catch(e){setError((e as Error).message)}};
+  return <><PageTitle eyebrow="CATÁLOGO" title="Combos" text="Monte ofertas com vários produtos e um preço único." action={<button className="ctl-primary" onClick={onNew}><Plus/> Novo combo</button>}/>
+    {data.combos.length?<div className="product-grid">{data.combos.map(c=><article className="ctl-card product-card" key={c.id}><div className="product-card-icon"><ShoppingBag/></div><span className={c.active?"badge":"badge warn"}>{c.active?"Ativo":"Inativo"}</span><h3>{c.name}</h3><p>{c.items.map(i=>`${i.quantity}× ${data.products.find(p=>p.id===i.productId)?.name||"Produto"}`).join(" + ")}</p><div><strong>{money(c.price)}</strong><small>{c.items.length} produto(s)</small></div><div className="card-actions"><button onClick={()=>setEditing(c)}><Pencil/> Editar</button><button className="delete" onClick={()=>setDeleting(c)}><Trash2/> Excluir</button></div></article>)}</div>:<div className="ctl-card ctl-empty"><ShoppingBag/><p>Nenhum combo cadastrado.</p></div>}
+    {editing&&<ComboModal combo={editing} products={data.products} onClose={()=>setEditing(null)} onSave={async c=>{try{await updateCombo(c);await onRefresh();setEditing(null);notify("Combo atualizado.")}catch(e){setError((e as Error).message)}}} error={error}/>} {deleting&&<ConfirmModal title="Excluir combo" text={`Excluir o combo “${deleting.name}”?`} error={error} onClose={()=>setDeleting(null)} onConfirm={remove}/>}</>;
+}
+
+function ComboModal({combo,products,onClose,onSave,error=""}:{combo?:Combo;products:Product[];onClose:()=>void;onSave:(c:Combo)=>Promise<void>;error?:string}) {
+  const [name,setName]=useState(combo?.name||""),[price,setPrice]=useState(combo?String(combo.price).replace(".",","):""),[active,setActive]=useState(combo?.active??true),[items,setItems]=useState(combo?.items||[]),[saving,setSaving]=useState(false);
+  const change=(productId:string,delta:number)=>setItems(old=>{const found=old.find(i=>i.productId===productId);if(!found&&delta>0)return [...old,{productId,quantity:1}];return old.flatMap(i=>i.productId!==productId?[i]:i.quantity+delta>0?[{...i,quantity:i.quantity+delta}]:[])});
+  return <Modal title={combo?"Editar combo":"Novo combo"} onClose={onClose}><form className="form-grid" onSubmit={async e=>{e.preventDefault();setSaving(true);try{await onSave({id:combo?.id||uid("cb"),name:name.trim(),price:Number(price.replace(",",".")),active,items})}finally{setSaving(false)}}}><label className="wide">Nome do combo<input required value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Dupla de smoothies"/></label><label>Preço do combo<input required inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0,00"/></label><label><span>Disponibilidade</span><select value={active?"active":"inactive"} onChange={e=>setActive(e.target.value==="active")}><option value="active">Ativo</option><option value="inactive">Inativo</option></select></label><div className="recipe-builder wide"><div><span>Produtos do combo</span><small>Escolha os itens e suas quantidades.</small></div><div className="combo-product-list">{products.filter(p=>p.active).map(p=>{const quantity=items.find(i=>i.productId===p.id)?.quantity||0;return <div key={p.id}><span>{p.name}<small>{money(p.price)}</small></span><span className="cart-actions"><button type="button" onClick={()=>change(p.id,-1)} disabled={!quantity}><Minus/></button><b>{quantity}</b><button type="button" onClick={()=>change(p.id,1)}><Plus/></button></span></div>})}</div></div>{error&&<div className="modal-error wide">{error}</div>}<footer className="wide"><button type="button" className="ctl-secondary" onClick={onClose}>Cancelar</button><button className="ctl-primary" disabled={!items.length||!name.trim()||Number(price.replace(",","."))<=0||saving}>{saving?"Salvando...":"Salvar combo"}</button></footer></form></Modal>;
+}
+
 function Products({ data, onNew }: { data: StoreData; onNew: () => void }) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
@@ -1171,6 +1305,7 @@ function Products({ data, onNew }: { data: StoreData; onNew: () => void }) {
       {editing && (
         <ProductEditModal
           product={editing}
+          materials={data.materials}
           error={error}
           onClose={() => setEditing(null)}
           onSave={save}
@@ -1206,6 +1341,7 @@ function Stock({
   const [editing, setEditing] = useState<Material | null>(null);
   const [deleting, setDeleting] = useState<Material | null>(null);
   const [restocking, setRestocking] = useState<Material | null>(null);
+  const [adjusting, setAdjusting] = useState<Material | null>(null);
   const [categoryId, setCategoryId] = useState("");
   const [error, setError] = useState("");
   const categoryName = (id: string) =>
@@ -1215,6 +1351,7 @@ function Stock({
     setEditing(null);
     setDeleting(null);
     setRestocking(null);
+    setAdjusting(null);
     setError("");
   };
   const addCategory = async (name: string) => {
@@ -1362,13 +1499,10 @@ function Stock({
                     <Plus /> Entrada
                   </button>
                   <button
-                    title="Retirar uma unidade"
-                    onClick={() => onChange(m.id, -1)}
+                    title="Definir estoque atual"
+                    onClick={() => setAdjusting(m)}
                   >
-                    <Minus />
-                  </button>
-                  <button title="Adicionar" onClick={() => onChange(m.id, 1)}>
-                    <Plus />
+                    <Pencil /> Saldo
                   </button>
                   <button
                     title="Editar"
@@ -1443,6 +1577,22 @@ function Stock({
                 restocking.name,
               );
               await onRefresh();
+              close();
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
+        />
+      )}
+      {adjusting && (
+        <StockBalanceModal
+          material={adjusting}
+          error={error}
+          onClose={close}
+          onSave={async (stock) => {
+            setError("");
+            try {
+              await onChange(adjusting.id, stock - adjusting.stock);
               close();
             } catch (e) {
               setError((e as Error).message);
@@ -1982,15 +2132,34 @@ function Costs({
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<CostEntry | null>(null);
   const [deleting, setDeleting] = useState<CostEntry | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    inputDate(new Date()).slice(0, 7),
+  );
+  const [costSearch, setCostSearch] = useState("");
   const costs = data.costs || [];
-  const total = costs.reduce((s, c) => s + c.amount, 0);
-  const month = costs
-    .filter(
-      (c) =>
-        new Date(`${c.paymentDate}T12:00:00`).getMonth() ===
-        new Date().getMonth(),
-    )
+  const normalizeSearch = (value: string) =>
+    value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const monthCosts = costs.filter(
+    (c) => c.paymentDate.slice(0, 7) === selectedMonth,
+  );
+  const query = normalizeSearch(costSearch.trim());
+  const visibleCosts = monthCosts
+    .filter((c) => {
+      if (!query) return true;
+      return normalizeSearch(
+        [c.description, c.category, c.paidBy, c.notes].filter(Boolean).join(" "),
+      ).includes(query);
+    })
+    .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
+  const total = monthCosts.reduce((s, c) => s + c.amount, 0);
+  const pending = monthCosts
+    .filter((c) => !c.paid)
     .reduce((s, c) => s + c.amount, 0);
+  const selectedMonthLabel = new Date(
+    `${selectedMonth}-01T12:00:00`,
+  ).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const moveMonth = (offset: number) =>
+    setSelectedMonth(addMonthsToDate(`${selectedMonth}-01`, offset).slice(0, 7));
   const paymentStatus = (date: string, paid: boolean) => {
     if (paid) return { alert: false, label: "Pago" };
     const today = new Date();
@@ -2173,20 +2342,53 @@ function Costs({
       <section className="ctl-kpis cost-kpis">
         <Kpi
           icon={Receipt}
-          label="Custos totais"
+          label="Custos do período"
           value={money(total)}
-          detail={`${costs.length} lançamentos`}
+          detail={`${monthCosts.length} lançamento(s) em ${selectedMonthLabel}`}
           accent="orange"
         />
         <Kpi
           icon={CircleDollarSign}
-          label="Pagamentos deste mês"
-          value={money(month)}
+          label="Pendente no período"
+          value={money(pending)}
           detail="Por data de pagamento"
           accent="pink"
         />
       </section>
       <article className="ctl-card">
+        <div className="cost-filters">
+          <div className="cost-period" aria-label="Selecionar período">
+            <button type="button" onClick={() => moveMonth(-1)} title="Mês anterior">
+              <ChevronLeft />
+            </button>
+            <label>
+              <span>Período</span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+              />
+            </label>
+            <button type="button" onClick={() => moveMonth(1)} title="Próximo mês">
+              <ChevronRight />
+            </button>
+          </div>
+          <label className="cost-search">
+            <Search />
+            <input
+              type="search"
+              value={costSearch}
+              onChange={(e) => setCostSearch(e.target.value)}
+              placeholder="Buscar custo, categoria ou responsável"
+              aria-label="Buscar custos"
+            />
+            {costSearch && (
+              <button type="button" onClick={() => setCostSearch("")} title="Limpar busca">
+                <X />
+              </button>
+            )}
+          </label>
+        </div>
         <div className="cost-help">
           Importação: colunas obrigatórias{" "}
           <b>Descrição, Categoria, Valor, Data e Data de pagamento</b>. Use{" "}
@@ -2200,7 +2402,7 @@ function Costs({
             <span>Valor</span>
             <span>Ações</span>
           </div>
-          {costs.map((c) => {
+          {visibleCosts.map((c) => {
             const status = paymentStatus(c.paymentDate, c.paid);
             return (
               <div
@@ -2259,6 +2461,13 @@ function Costs({
               </div>
             );
           })}
+          {!visibleCosts.length && (
+            <div className="ctl-empty cost-empty">
+              {query
+                ? "Nenhum custo encontrado para a busca neste período."
+                : "Nenhum custo com pagamento neste período."}
+            </div>
+          )}
         </div>
       </article>
       {editing && (
@@ -2609,6 +2818,7 @@ function SaleModal({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [payment, setPayment] = useState<"Pix" | "Dinheiro" | "Cartão">("Pix");
+  const [discount, setDiscount] = useState("");
   const add = (p: Product) =>
     setItems((old) => {
       const found = old.find((i) => i.productId === p.id);
@@ -2627,10 +2837,14 @@ function SaleModal({
             },
           ];
     });
+  const addCombo = (c: Combo) => setItems((old) => {
+    const found=old.find(i=>i.comboId===c.id);
+    return found?old.map(i=>i.comboId===c.id?{...i,quantity:i.quantity+1}:i):[...old,{comboId:c.id,name:c.name,quantity:1,unitPrice:c.price,kind:"combo"}];
+  });
   const decrease = (id?: string) =>
     setItems((old) =>
       old.flatMap((i) =>
-        i.productId !== id
+        (i.productId || i.comboId) !== id
           ? [i]
           : i.quantity > 1
             ? [{ ...i, quantity: i.quantity - 1 }]
@@ -2649,10 +2863,12 @@ function SaleModal({
           },
         ]
       : items;
-  const total = finalItems.reduce(
+  const subtotal = finalItems.reduce(
     (sum, item) => sum + item.quantity * item.unitPrice,
     0,
   );
+  const discountValue = Math.min(100, Math.max(0, Number(discount.replace(",", ".")) || 0));
+  const total = Math.round(subtotal * (1 - discountValue / 100) * 100) / 100;
   const choose = (type: "acai" | "product") => {
     setSaleType(type);
     setItems([]);
@@ -2667,6 +2883,8 @@ function SaleModal({
           id: uid("v"),
           createdAt: new Date().toISOString(),
           items: finalItems,
+          subtotal,
+          discount: discountValue,
           total,
           payment,
         },
@@ -2733,6 +2951,9 @@ function SaleModal({
                       </span>
                     </button>
                   ))}
+                {data.combos.filter((c) => c.active).map((c) => (
+                  <button key={c.id} onClick={() => addCombo(c)}><Plus /><span>{c.name}<small>Combo · {money(c.price)}</small></span></button>
+                ))}
               </div>
             ) : (
               <div className="sale-empty">
@@ -2746,26 +2967,24 @@ function SaleModal({
         {saleType === "product" && items.length > 0 && (
           <div className="cart-list">
             {items.map((i) => (
-              <div key={i.productId}>
+              <div key={i.productId || i.comboId}>
                 <span>
                   {i.quantity}× {i.name}
                 </span>
                 <strong>{money(i.quantity * i.unitPrice)}</strong>
                 <span className="cart-actions">
-                  <button onClick={() => decrease(i.productId)}>
+                  <button onClick={() => decrease(i.productId || i.comboId)}>
                     <Minus />
                   </button>
                   <button
-                    onClick={() =>
-                      add(data.products.find((p) => p.id === i.productId)!)
-                    }
+                    onClick={() => i.kind === "combo" ? addCombo(data.combos.find((c) => c.id === i.comboId)!) : add(data.products.find((p) => p.id === i.productId)!)}
                   >
                     <Plus />
                   </button>
                   <button
                     onClick={() =>
                       setItems((old) =>
-                        old.filter((x) => x.productId !== i.productId),
+                        old.filter((x) => (x.productId || x.comboId) !== (i.productId || i.comboId)),
                       )
                     }
                   >
@@ -2790,6 +3009,14 @@ function SaleModal({
             ))}
           </div>
         </label>
+        <label className="field">
+          <span>Desconto (%)</span>
+          <div className="percent-input">
+            <input inputMode="decimal" min="0" max="100" placeholder="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+            <b>%</b>
+          </div>
+          <small>O percentual será retirado do valor final.</small>
+        </label>
         {error && (
           <div className="modal-error sale-error" role="alert">
             {error}
@@ -2798,11 +3025,12 @@ function SaleModal({
         <footer>
           <div>
             <small>Total da venda</small>
+            {discountValue > 0 && <span className="discount-summary">De {money(subtotal)} com {discountValue}% OFF</span>}
             <strong>{money(total)}</strong>
           </div>
           <button
             className="ctl-primary"
-            disabled={!total || saving}
+            disabled={!subtotal || saving}
             onClick={submit}
           >
             {saving ? "Registrando..." : "Finalizar venda"}
@@ -3338,11 +3566,13 @@ function SaleEditModal({
 
 function ProductEditModal({
   product,
+  materials,
   error,
   onClose,
   onSave,
 }: {
   product: Product;
+  materials: Material[];
   error: string;
   onClose: () => void;
   onSave: (product: Product) => void;
@@ -3351,7 +3581,21 @@ function ProductEditModal({
     ...product,
     price: String(product.price).replace(".", ","),
     cost: String(product.cost).replace(".", ","),
+    stock: String(product.stock),
+    minStock: String(product.minStock),
   });
+  const [recipe, setRecipe] = useState<RecipeItem[]>(product.recipe || []);
+  const [materialId, setMaterialId] = useState(materials[0]?.id || "");
+  const [quantity, setQuantity] = useState("");
+  const addRecipe = () => {
+    const amount = Number(quantity.replace(",", "."));
+    if (!materialId || !Number.isFinite(amount) || amount <= 0) return;
+    setRecipe((old) => [
+      ...old.filter((item) => item.materialId !== materialId),
+      { materialId, quantity: amount },
+    ]);
+    setQuantity("");
+  };
   return (
     <Modal title="Editar produto" onClose={onClose}>
       <form
@@ -3363,6 +3607,9 @@ function ProductEditModal({
             ...f,
             price: Number(f.price.replace(",", ".")),
             cost: Number(f.cost.replace(",", ".")),
+            stock: Number(f.stock.replace(",", ".")),
+            minStock: Number(f.minStock.replace(",", ".")),
+            recipe,
           });
         }}
       >
@@ -3397,6 +3644,17 @@ function ProductEditModal({
           />
         </label>
         <label>
+          Unidade de venda
+          <select
+            value={f.unit}
+            onChange={(e) => setF({ ...f, unit: e.target.value as Product["unit"] })}
+          >
+            <option value="un">Unidade</option>
+            <option value="kg">Quilograma</option>
+            <option value="L">Litro</option>
+          </select>
+        </label>
+        <label>
           Preço de venda
           <input
             required
@@ -3406,13 +3664,91 @@ function ProductEditModal({
           />
         </label>
         <label>
-          Custo adicional
+          Custo
           <input
             inputMode="decimal"
             value={f.cost}
             onChange={(e) => setF({ ...f, cost: e.target.value })}
           />
         </label>
+        <label>
+          Estoque atual
+          <input
+            required
+            min="0"
+            step="any"
+            type="number"
+            inputMode="decimal"
+            value={f.stock}
+            onChange={(e) => setF({ ...f, stock: e.target.value })}
+          />
+        </label>
+        <label>
+          Estoque mínimo
+          <input
+            required
+            min="0"
+            step="any"
+            type="number"
+            inputMode="decimal"
+            value={f.minStock}
+            onChange={(e) => setF({ ...f, minStock: e.target.value })}
+          />
+        </label>
+        <label className="check-field wide">
+          <input
+            type="checkbox"
+            checked={f.active}
+            onChange={(e) => setF({ ...f, active: e.target.checked })}
+          />{" "}
+          Produto ativo e disponível para venda
+        </label>
+        <div className="recipe-builder wide">
+          <div>
+            <span>Receita do produto</span>
+            <small>Edite os materiais consumidos por unidade vendida.</small>
+          </div>
+          {materials.length ? (
+            <>
+              <div className="recipe-inputs">
+                <select
+                  value={materialId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setMaterialId(id);
+                    const selected = materials.find((m) => m.id === id);
+                    setQuantity(selected?.portionEnabled ? String(selected.portionQuantity) : "");
+                  }}
+                >
+                  {materials.map((m) => (
+                    <option value={m.id} key={m.id}>{m.name} ({m.unit})</option>
+                  ))}
+                </select>
+                <input
+                  inputMode="decimal"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="Quantidade"
+                />
+                <button type="button" onClick={addRecipe}><Plus /> Adicionar</button>
+              </div>
+              <div className="recipe-list">
+                {recipe.map((item) => {
+                  const material = materials.find((m) => m.id === item.materialId);
+                  return (
+                    <div key={item.materialId}>
+                      <span>{material?.name || "Material indisponível"}</span>
+                      <b>{item.quantity} {material?.unit}</b>
+                      <button type="button" onClick={() => setRecipe((old) => old.filter((i) => i.materialId !== item.materialId))}><X /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="form-note">Nenhum material cadastrado.</div>
+          )}
+        </div>
         {error && <div className="modal-error wide">{error}</div>}
         <footer className="wide">
           <button type="button" className="ctl-secondary" onClick={onClose}>
@@ -3594,6 +3930,52 @@ function StockEntryModal({
   );
 }
 
+function StockBalanceModal({
+  material,
+  error,
+  onClose,
+  onSave,
+}: {
+  material: Material;
+  error: string;
+  onClose: () => void;
+  onSave: (stock: number) => Promise<void>;
+}) {
+  const [value, setValue] = useState(String(material.stock));
+  const [busy, setBusy] = useState(false);
+  const stock = Number(value.replace(",", "."));
+  return (
+    <Modal title="Editar estoque atual" onClose={onClose}>
+      <form
+        className="form-grid"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!Number.isFinite(stock) || stock < 0) return;
+          setBusy(true);
+          try {
+            await onSave(stock);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div className="form-note wide">
+          Informe o saldo total disponível de {material.name}. O valor anterior é {material.stock} {material.unit}.
+        </div>
+        <label className="wide">
+          Estoque atual ({material.unit})
+          <input autoFocus required min="0" step="any" type="number" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />
+        </label>
+        {error && <div className="modal-error wide">{error}</div>}
+        <footer className="wide">
+          <button type="button" className="ctl-secondary" onClick={onClose}>Cancelar</button>
+          <button className="ctl-primary" disabled={busy || !Number.isFinite(stock) || stock < 0}>{busy ? "Atualizando..." : "Salvar estoque"}</button>
+        </footer>
+      </form>
+    </Modal>
+  );
+}
+
 function MaterialModal({
   material,
   categories,
@@ -3682,21 +4064,25 @@ function MaterialModal({
               ))}
             </select>
           </label>
-          {!material && (
-            <label>
-              Estoque inicial
-              <input
-                required
-                inputMode="decimal"
-                value={f.stock}
-                onChange={(e) => setF({ ...f, stock: e.target.value })}
-              />
-            </label>
-          )}
+          <label>
+            {material ? "Estoque atual" : "Estoque inicial"}
+            <input
+              required
+              min="0"
+              step="any"
+              type="number"
+              inputMode="decimal"
+              value={f.stock}
+              onChange={(e) => setF({ ...f, stock: e.target.value })}
+            />
+          </label>
           <label>
             Estoque mínimo
             <input
               required
+              min="0"
+              step="any"
+              type="number"
               inputMode="decimal"
               value={f.minStock}
               onChange={(e) => setF({ ...f, minStock: e.target.value })}
