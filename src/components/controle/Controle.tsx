@@ -335,6 +335,7 @@ export function Controle() {
               data={data}
               onNew={() => setModal("sale")}
               employee={!isAdmin}
+              canEditDate={user.role === "developer"}
             />
           ) : view === "Comandas" ? (
             <Tabs
@@ -972,9 +973,11 @@ function Kpi({ icon: Icon, label, value, detail, accent }: any) {
 function SalesTable({
   sales,
   manage = false,
+  canEditDate = false,
 }: {
   sales: import("../../types/controle").Sale[];
   manage?: boolean;
+  canEditDate?: boolean;
 }) {
   const [editing, setEditing] = useState<
     import("../../types/controle").Sale | null
@@ -985,11 +988,13 @@ function SalesTable({
   const [error, setError] = useState("");
   const save = async (
     payment: import("../../types/controle").Sale["payment"],
+    createdAt?: string,
+    total?: number,
   ) => {
     if (!editing) return;
     setError("");
     try {
-      await updateSale(editing.id, payment);
+      await updateSale(editing.id, payment, createdAt, total);
       window.location.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -1069,6 +1074,7 @@ function SalesTable({
           error={error}
           onClose={() => setEditing(null)}
           onSave={save}
+          canEditDate={canEditDate}
         />
       )}
       {deleting && (
@@ -1088,10 +1094,12 @@ function Sales({
   data,
   onNew,
   employee = false,
+  canEditDate = false,
 }: {
   data: StoreData;
   onNew: () => void;
   employee?: boolean;
+  canEditDate?: boolean;
 }) {
   return (
     <>
@@ -1118,7 +1126,7 @@ function Sales({
             </label>
             <span>{data.sales.length} vendas registradas</span>
           </div>
-          <SalesTable sales={data.sales} manage />
+          <SalesTable sales={data.sales} manage canEditDate={canEditDate} />
         </article>
       )}{" "}
       {employee && (
@@ -3521,20 +3529,26 @@ function SaleEditModal({
   error,
   onClose,
   onSave,
+  canEditDate,
 }: {
   sale: import("../../types/controle").Sale;
   error: string;
   onClose: () => void;
-  onSave: (payment: import("../../types/controle").Sale["payment"]) => void;
+  onSave: (payment: import("../../types/controle").Sale["payment"], createdAt?: string, total?: number) => void;
+  canEditDate: boolean;
 }) {
   const [payment, setPayment] = useState(sale.payment);
+  const localDate = new Date(new Date(sale.createdAt).getTime() - new Date(sale.createdAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const [createdAt, setCreatedAt] = useState(localDate);
+  const [total, setTotal] = useState(String(sale.total).replace(".", ","));
   return (
     <Modal title="Editar venda" onClose={onClose}>
       <form
         className="form-grid"
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(payment);
+          const parsedTotal = Number(total.replace(",", "."));
+          onSave(payment, canEditDate ? new Date(createdAt).toISOString() : undefined, canEditDate && parsedTotal !== sale.total ? parsedTotal : undefined);
         }}
       >
         <label className="wide">
@@ -3548,6 +3562,19 @@ function SaleEditModal({
             <option>Cartão</option>
           </select>
         </label>
+        {canEditDate && (
+          <>
+            <label>
+              Data e hora da venda
+              <input required type="datetime-local" value={createdAt} onChange={(e) => setCreatedAt(e.target.value)} />
+            </label>
+            <label>
+              Valor final da venda
+              <input required inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} />
+            </label>
+            <small className="developer-field-note wide">Campos disponíveis somente para o desenvolvedor. Alterar o valor remove o desconto percentual anterior.</small>
+          </>
+        )}
         <div className="modal-summary wide">
           <span>Total da venda</span>
           <strong>{money(sale.total)}</strong>

@@ -30,7 +30,7 @@ const normalizeStore=(data:Partial<StoreData>|null|undefined):StoreData=>({
 });
 export const loadStore=async()=>normalizeStore(await request<Partial<StoreData>>('/api/store'));
 export const createSale=(sale:Sale)=>request('/api/sales',{method:'POST',body:JSON.stringify(sale)});
-export const updateSale=(id:string,payment:Sale['payment'])=>request<void>(`/api/sales/${id}`,{method:'PATCH',body:JSON.stringify({payment})});
+export const updateSale=(id:string,payment:Sale['payment'],createdAt?:string,total?:number)=>request<void>(`/api/sales/${id}`,{method:'PATCH',body:JSON.stringify({payment,...(createdAt?{createdAt}:{}),...(total!==undefined?{total}:{})})});
 export const deleteSale=(id:string)=>request<void>(`/api/sales/${id}`,{method:'DELETE'});
 export const createTab=(tab:CustomerTab)=>request('/api/tabs',{method:'POST',body:JSON.stringify(tab)});
 export const addTabItems=(id:string,items:CustomerTab['items'])=>request<void>(`/api/tabs/${id}/items`,{method:'POST',body:JSON.stringify({items})});
