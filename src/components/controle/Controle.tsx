@@ -30,7 +30,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { readSheet } from "read-excel-file/browser";
+import readWorkbook, { readSheet } from "read-excel-file/browser";
 import {
   addMaterialStock,
   addTabItems,
@@ -184,6 +184,11 @@ export function Controle() {
     getSession()
       .then(({ user }) => setUser(user))
       .catch(() => setUser(null));
+  }, []);
+  useEffect(() => {
+    const handleExpiredSession = () => setUser(null);
+    window.addEventListener("aflora:session-expired", handleExpiredSession);
+    return () => window.removeEventListener("aflora:session-expired", handleExpiredSession);
   }, []);
   useEffect(() => {
     if (user)
@@ -2126,6 +2131,34 @@ function addMonthsToDate(value: string, months: number) {
     new Date(target.getFullYear(), target.getMonth(), Math.min(day, last)),
   );
 }
+const normalizeColumn = (value: unknown) => String(value || "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const importedCategory = (value: unknown, type?: unknown): CostCategory => {
+  const text=normalizeColumn(`${value || ""} ${type || ""}`);
+  if(text.includes("estoque")||text.includes("insumo"))return "Estoque";
+  if(text.includes("mao de obra"))return "Mão de obra";
+  if(text.includes("marketing")||text.includes("comunicacao"))return "Marketing";
+  if(text.includes("taxa")||text.includes("documentacao")||text.includes("imposto"))return "Impostos";
+  if(text.includes("aluguel"))return "Aluguel";
+  if(text.includes("energia"))return "Energia";
+  if(/reforma|obra|equipamento|moveis|mobiliario|decoracao|construcao/.test(text))return "Construção";
+  return "Outros";
+};
+const importedDate = (value: unknown) => {
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return inputDate(value);
+  const text=String(value||"").trim();
+  const iso=text.match(/^(\d{4})-(\d{2})-(\d{2})/);if(iso)return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br=text.replace(/\D/g,"").match(/^(\d{2})(\d{2})(\d{4})$/);if(br)return `${br[3]}-${br[2]}-${br[1]}`;
+  return "";
+};
+const importedNumber = (value: unknown) => typeof value==="number"?value:Number(String(value||0).replace(/R\$\s?/i,"").replaceAll(".","").replace(",","."));
+function parseCostSheet(rows:unknown[][],source:string):CostEntry[]{
+  const headers=rows[0].map(normalizeColumn),find=(...names:string[])=>headers.findIndex(h=>names.includes(h));
+  const project=find("valor total")>=0&&find("fornecedor")>=0;
+  const parcel=find("valor da parcela")>=0&&find("1º vencimento","1o vencimento")>=0;
+  if(project){const ix={date:find("data"),type:find("tipo"),category:find("categoria"),description:find("descricao"),supplier:find("fornecedor"),amount:find("valor total"),status:find("status"),due:find("vencimento"),paidAt:find("pago em"),notes:find("observacoes")};return rows.slice(1).flatMap((row,index)=>{const amount=importedNumber(row[ix.amount]),date=importedDate(row[ix.date]);if(!row[ix.description]||!Number.isFinite(amount)||amount<=0||!date)return[];const due=importedDate(row[ix.due]),paidAt=importedDate(row[ix.paidAt]),paid=/^pago$/i.test(String(row[ix.status]||"").trim()),misplacedPayer=!due&&String(row[ix.due]||"").trim();return[{id:uid("imp"),description:String(row[ix.description]).trim(),category:importedCategory(row[ix.category],row[ix.type]),amount:Math.round(amount*100)/100,date,paymentDate:(paid&&paidAt)||due||date,payee:String(row[ix.supplier]||"Não informado").trim(),paidBy:misplacedPayer||"Não informado",recurring:false,paid,paidAt:paid?(paidAt||date):undefined,notes:[`Importado de ${source}, linha ${index+2}.`,row[ix.notes]].filter(Boolean).join(" ")}];});}
+  if(parcel){const ix={date:find("data da compra"),description:find("descricao / investimento"),category:find("categoria"),card:find("cartao"),total:find("valor total"),parts:find("nº parcelas","no parcelas"),partValue:find("valor da parcela"),due:find("1º vencimento","1o vencimento"),paid:find("parcelas pagas")};return rows.slice(1).flatMap((row,index)=>{const total=importedNumber(row[ix.total]),date=importedDate(row[ix.date]),firstDue=importedDate(row[ix.due]);if(!row[ix.description]||!Number.isFinite(total)||total<=0||!date||!firstDue)return[];const rawParts=Number(row[ix.parts]),parts=Number.isFinite(rawParts)&&rawParts>0?Math.floor(rawParts):1,paidParts=Math.max(0,Number(row[ix.paid])||0),base=importedNumber(row[ix.partValue]);const groupId=parts>1?uid("grp"):undefined;return Array.from({length:parts},(_,part)=>{const amount=part===parts-1?Math.round((total-(Number.isFinite(base)?base:total/parts)*(parts-1))*100)/100:Math.round((Number.isFinite(base)?base:total/parts)*100)/100;return{id:uid("imp"),description:String(row[ix.description]).trim(),category:importedCategory(row[ix.category]),amount,date,paymentDate:addMonthsToDate(firstDue,part),payee:String(row[ix.card]||"Não informado").trim(),paidBy:"Não informado",recurring:false,paid:part<paidParts,paidAt:part<paidParts?addMonthsToDate(firstDue,part):undefined,notes:`Importado de ${source}, linha ${index+2}.`,installmentNumber:part+1,installmentsTotal:parts,installmentGroupId:groupId};});});}
+  return [];
+}
 function Costs({
   data,
   onNew,
@@ -2155,7 +2188,7 @@ function Costs({
     .filter((c) => {
       if (!query) return true;
       return normalizeSearch(
-        [c.description, c.category, c.paidBy, c.notes].filter(Boolean).join(" "),
+        [c.description, c.category, c.payee, c.paidBy, c.notes].filter(Boolean).join(" "),
       ).includes(query);
     })
     .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
@@ -2196,7 +2229,12 @@ function Costs({
           .split(/\r?\n/)
           .filter(Boolean)
           .map((line) => line.split(";").map((cell) => cell.trim()));
-      } else rows = (await readSheet(file)) as unknown[][];
+      } else {
+        const sheets=await readWorkbook(file);
+        const specialized=sheets.flatMap(sheet=>parseCostSheet(sheet.data as unknown[][],`${file.name} · ${sheet.sheet}`));
+        if(specialized.length){await importCosts(specialized);onImported(specialized);return;}
+        rows = (await readSheet(file)) as unknown[][];
+      }
       if (rows.length < 2) throw new Error("A planilha não contém dados.");
       const headers = rows[0].map((v) =>
         String(v || "")
@@ -2223,6 +2261,8 @@ function Costs({
           "installments",
         ]),
         recurring: find(["recorrente", "recurring"]),
+        payee: find(["pagar para", "favorecido", "fornecedor", "cartão", "cartao", "payee"]),
+        paidBy: find(["quem pagou", "pago por"]),
         notes: find(["observações", "observacoes", "notas", "notes"]),
       };
       if (
@@ -2273,6 +2313,8 @@ function Costs({
             amount,
             date,
             paymentDate: addMonthsToDate(paymentDate, part),
+            payee:indexes.payee>=0?String(row[indexes.payee]||"Não informado").trim():"Não informado",
+            paidBy:indexes.paidBy>=0?String(row[indexes.paidBy]||"Não informado").trim():"Não informado",
             recurring: /^(sim|true|1)$/i.test(
               String(row[indexes.recurring] || ""),
             ),
@@ -2387,7 +2429,7 @@ function Costs({
               type="search"
               value={costSearch}
               onChange={(e) => setCostSearch(e.target.value)}
-              placeholder="Buscar custo, categoria ou responsável"
+              placeholder="Buscar custo, categoria ou destinatário"
               aria-label="Buscar custos"
             />
             {costSearch && (
@@ -2399,8 +2441,8 @@ function Costs({
         </div>
         <div className="cost-help">
           Importação: colunas obrigatórias{" "}
-          <b>Descrição, Categoria, Valor, Data e Data de pagamento</b>. Use{" "}
-          <b>Parcelas</b> para gerar os próximos meses.
+          <b>Descrição, Categoria, Valor, Data e Data de pagamento</b>. Também aceita as abas{" "}
+          <b>Lançamento de Gastos</b> e <b>Parcelas</b>, incluindo fornecedor/cartão e vencimentos.
         </div>
         <div className="cost-table">
           <div className="cost-row cost-head">
@@ -2422,7 +2464,7 @@ function Costs({
                   <small>
                     {c.installmentsTotal && c.installmentsTotal > 1
                       ? `Parcela ${c.installmentNumber}/${c.installmentsTotal}`
-                      : c.notes || "Pagamento único"}
+                      : c.payee ? `Pagar para: ${c.payee}` : c.notes || "Pagamento único"}
                   </small>
                 </span>
                 <span>
@@ -2525,7 +2567,7 @@ function downloadReportCsv(
     ["Relatório Aflora"],
     ["Período", start.toLocaleDateString("pt-BR"), end.toLocaleDateString("pt-BR")],
     [],
-    ["Tipo", "Data", "Descrição", "Categoria/Forma", "Quem pagou", "Valor (R$)"],
+    ["Tipo", "Data", "Descrição", "Categoria/Forma", "Pagar para", "Valor (R$)"],
     ...sales.map((sale) => [
       "Venda",
       reportDate(sale.createdAt),
@@ -2539,7 +2581,7 @@ function downloadReportCsv(
       reportDate(cost.date),
       cost.description,
       cost.category,
-      cost.paidBy || "Não informado",
+      cost.payee || "Não informado",
       (-cost.amount).toFixed(2).replace(".", ","),
     ]),
   ];
@@ -2610,12 +2652,12 @@ async function downloadReportPdf(
     .lastAutoTable?.finalY;
   autoTable(doc, {
     startY: (firstTableEnd || 51) + 9,
-    head: [["Data", "Custo", "Categoria", "Quem pagou", "Valor"]],
+    head: [["Data", "Custo", "Categoria", "Pagar para", "Valor"]],
     body: costs.map((cost) => [
       reportDate(cost.date),
       cost.description,
       cost.category,
-      cost.paidBy || "Não informado",
+      cost.payee || "Não informado",
       money(cost.amount),
     ]),
     theme: "grid",
@@ -3342,7 +3384,7 @@ function CostModal({
     amount: cost ? String(cost.amount).replace(".", ",") : "",
     date: cost?.date || today,
     paymentDate: cost?.paymentDate || today,
-    paidBy: cost?.paidBy || "",
+    payee: cost?.payee || "",
     installments: String(cost?.installmentsTotal || 1),
     recurring: cost?.recurring || false,
     notes: cost?.notes || "",
@@ -3360,7 +3402,7 @@ function CostModal({
             amount: Number(f.amount.replace(",", ".")),
             date: f.date,
             paymentDate: f.paymentDate,
-            paidBy: f.paidBy.trim(),
+            payee: f.payee.trim(),
             recurring: f.recurring,
             paid: cost?.paid || false,
             paidAt: cost?.paidAt,
@@ -3423,14 +3465,14 @@ function CostModal({
           />
         </label>
         <label className="wide">
-          Quem pagou
+          Pagar para
           <input
             required
             minLength={2}
-            maxLength={100}
-            value={f.paidBy}
-            onChange={(e) => setF({ ...f, paidBy: e.target.value })}
-            placeholder="Ex.: Maria, João ou Caixa da empresa"
+            maxLength={120}
+            value={f.payee}
+            onChange={(e) => setF({ ...f, payee: e.target.value })}
+            placeholder="Ex.: Fornecedor, banco ou cartão"
           />
         </label>
         {!cost && (

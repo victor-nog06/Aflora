@@ -62,7 +62,7 @@ export interface AcaiBatch {
 }
 
 export type CostCategory = 'Estoque' | 'Mão de obra' | 'Construção' | 'Aluguel' | 'Energia' | 'Marketing' | 'Impostos' | 'Outros';
-export interface CostEntry { id:string; description:string; category:CostCategory; amount:number; date:string; paymentDate:string; paidBy?:string; recurring:boolean; paid:boolean; paidAt?:string; notes?:string; installmentNumber?:number; installmentsTotal?:number; installmentGroupId?:string; installments?:number }
+export interface CostEntry { id:string; description:string; category:CostCategory; amount:number; date:string; paymentDate:string; payee?:string; paidBy?:string; recurring:boolean; paid:boolean; paidAt?:string; notes?:string; installmentNumber?:number; installmentsTotal?:number; installmentGroupId?:string; installments?:number }
 
 export interface StoreData {
   products: Product[];

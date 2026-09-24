@@ -11,6 +11,7 @@ async function request<T>(path:string, options?:RequestInit):Promise<T>{
   const text=response.status===204?'':await response.text();
   let body:Record<string,unknown>={};
   try{body=text?JSON.parse(text):{}}catch{/* O proxy pode responder texto ou HTML. */}
+  if(response.status===401&&!path.startsWith('/api/auth/'))window.dispatchEvent(new Event('aflora:session-expired'));
   if(!response.ok){const detail=typeof body.message==='string'?body.message:'';const fallback=response.status>=500?'O servidor não conseguiu processar a solicitação.':'Não foi possível concluir a operação.';throw new Error(`${detail||fallback} (HTTP ${response.status})`);}
   return response.status===204?undefined as T:body as T;
 }
